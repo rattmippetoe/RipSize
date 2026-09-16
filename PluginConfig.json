@@ -1,0 +1,10 @@
+{
+  "name": "RipSize",
+  "desc": "RipSize for Supernote.",
+  "iconPath": "",
+  "versionName": "0.0.1",
+  "versionCode": "1",
+  "pluginID": "t4ibxybfetg5wcr6",
+  "pluginKey": "ripsize",
+  "jsMainPath": "index"
+}
