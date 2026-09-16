@@ -1,0 +1,242 @@
+name: Bootstrap fresh RipSize
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-ripsize.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android build components
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
+
+      - name: Generate current Supernote scaffold
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          WORK="$(mktemp -d)"
+          echo "WORK=$WORK" >> "$GITHUB_ENV"
+          cd "$WORK"
+          npx --yes @react-native-community/cli@latest init RipSize \
+            --template @supernote-plugin/sn-plugin-template \
+            --version 0.79.2
+
+          rsync -a \
+            --exclude='.git' \
+            --exclude='.github' \
+            "$WORK/RipSize/" "$GITHUB_WORKSPACE/"
+
+      - name: Pin Supernote runtime dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          node <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          p.name = 'ripsize';
+          p.version = '0.0.1';
+          p.private = true;
+          p.dependencies = p.dependencies || {};
+          p.devDependencies = p.devDependencies || {};
+          p.dependencies['sn-plugin-lib'] = '0.1.65';
+          p.dependencies['react'] = '19.0.0';
+          p.dependencies['react-native'] = '0.79.2';
+          p.devDependencies['react-test-renderer'] = '19.0.0';
+          if (p.devDependencies['@types/react']) p.devDependencies['@types/react'] = '19.0.0';
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+
+          node <<'NODE'
+          const fs = require('fs');
+          if (fs.existsSync('app.json')) {
+            const a = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+            a.name = 'RipSize';
+            a.displayName = 'RipSize';
+            fs.writeFileSync('app.json', JSON.stringify(a, null, 2) + '\n');
+          }
+          NODE
+
+          rm -f yarn.lock package-lock.json
+          npm install --legacy-peer-deps
+
+      - name: Vendor Supernote development skill
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 https://github.com/gorlix/supernote-plugin-dev.git "$WORK/supernote-plugin-dev"
+          SKILL_SHA="$(git -C "$WORK/supernote-plugin-dev" rev-parse HEAD)"
+          rm -rf "$GITHUB_WORKSPACE/.agents/skills/supernote-plugin-dev"
+          mkdir -p "$GITHUB_WORKSPACE/.agents/skills"
+          cp -R "$WORK/supernote-plugin-dev/skills/supernote-plugin-dev" "$GITHUB_WORKSPACE/.agents/skills/"
+
+          mkdir -p "$GITHUB_WORKSPACE/docs"
+          cat > "$GITHUB_WORKSPACE/docs/SUPERNOTE_SKILL_SOURCE.md" <<EOF
+          # Supernote development skill source
+
+          RipSize vendors the generic Supernote development skill from:
+
+          - Upstream: https://github.com/gorlix/supernote-plugin-dev
+          - Commit: \`$SKILL_SHA\`
+          - Vendored path: \`.agents/skills/supernote-plugin-dev/\`
+
+          The skill is reference material, not RipSize application code. For SDK signatures, live Supernote documentation remains authoritative.
+          EOF
+
+      - name: Add project agent instructions
+        shell: bash
+        run: |
+          cat > "$GITHUB_WORKSPACE/AGENTS.md" <<'EOF'
+          # RipSize agent instructions
+
+          RipSize is a fresh Supernote plugin project. Do not restore or infer behavior from any earlier RipSize implementation unless a current issue or specification explicitly asks for it.
+
+          Before changing Supernote-specific code, read `.agents/skills/supernote-plugin-dev/SKILL.md` and the relevant file under `.agents/skills/supernote-plugin-dev/references/`.
+
+          Baseline runtime constraints:
+          - React Native: exactly 0.79.2
+          - React: exactly 19.0.0
+          - sn-plugin-lib: exactly 0.1.65 until deliberately upgraded and device-tested
+          - Android compile/target SDK: 35
+          - Android build-tools: 35.0.0
+          - NDK: 27.1.12297006
+
+          Supernote's live documentation is authoritative when it conflicts with vendored reference material. Keep the plugin ID stable after the first distributable build.
+          EOF
+
+      - name: Add continuous build workflow
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/.github/workflows"
+          cat > "$GITHUB_WORKSPACE/.github/workflows/build.yml" <<'EOF'
+          name: Build RipSize
+
+          on:
+            push:
+              branches: [main]
+            pull_request:
+              branches: [main]
+            workflow_dispatch:
+
+          permissions:
+            contents: read
+
+          jobs:
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - uses: actions/setup-node@v4
+                  with:
+                    node-version: '20'
+                    cache: npm
+                - uses: actions/setup-java@v4
+                  with:
+                    distribution: temurin
+                    java-version: '21'
+                - uses: android-actions/setup-android@v3
+                - name: Install Android SDK components
+                  run: |
+                    yes | sdkmanager --licenses >/dev/null || true
+                    sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
+                - name: Install dependencies
+                  run: npm ci --legacy-peer-deps
+                - name: Build plugin
+                  run: |
+                    chmod +x ./buildPlugin.sh
+                    ./buildPlugin.sh
+                - name: Upload installable plugin
+                  uses: actions/upload-artifact@v4
+                  with:
+                    name: RipSize-snplg
+                    path: build/outputs/*.snplg
+                    if-no-files-found: error
+          EOF
+
+      - name: Set clean project README
+        shell: bash
+        run: |
+          cat > "$GITHUB_WORKSPACE/README.md" <<'EOF'
+          # RipSize
+
+          RipSize is a Supernote plugin being rebuilt from scratch for the current Supernote plugin runtime.
+
+          ## Baseline
+
+          - React Native 0.79.2
+          - React 19.0.0
+          - sn-plugin-lib 0.1.65
+          - Android SDK 35 / Build Tools 35.0.0
+          - NDK 27.1.12297006
+
+          This repository is the authoritative source for the new RipSize implementation. Previous RipSize implementations are intentionally not part of this codebase.
+
+          Generic Supernote development guidance is vendored under `.agents/skills/supernote-plugin-dev/`; see `AGENTS.md` before making SDK-level changes.
+          EOF
+
+      - name: Build fresh scaffold
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          chmod +x ./buildPlugin.sh
+          ./buildPlugin.sh
+
+          if [ -f PluginConfig.json ]; then
+            node <<'NODE'
+            const fs = require('fs');
+            const p = JSON.parse(fs.readFileSync('PluginConfig.json', 'utf8').replace(/^\uFEFF/, ''));
+            p.name = 'RipSize';
+            p.desc = 'Supernote selection resizing tools.';
+            p.versionName = '0.0.1';
+            p.versionCode = '1';
+            fs.writeFileSync('PluginConfig.json', JSON.stringify(p, null, 2) + '\n');
+            NODE
+            ./buildPlugin.sh
+          fi
+
+          test -n "$(find build/outputs -maxdepth 1 -name '*.snplg' -print -quit)"
+
+      - name: Commit generated project to bootstrap branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$GITHUB_WORKSPACE"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Bootstrap fresh RipSize Supernote plugin' || exit 0
+          git push origin "HEAD:${{ github.head_ref || github.ref_name }}"
