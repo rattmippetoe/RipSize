@@ -218,15 +218,7 @@ jobs:
           ./buildPlugin.sh
 
           if [ -f PluginConfig.json ]; then
-            node <<'NODE'
-            const fs = require('fs');
-            const p = JSON.parse(fs.readFileSync('PluginConfig.json', 'utf8').replace(/^\uFEFF/, ''));
-            p.name = 'RipSize';
-            p.desc = 'Supernote selection resizing tools.';
-            p.versionName = '0.0.1';
-            p.versionCode = '1';
-            fs.writeFileSync('PluginConfig.json', JSON.stringify(p, null, 2) + '\n');
-            NODE
+            node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('PluginConfig.json','utf8').replace(/^\\uFEFF/,''));p.name='RipSize';p.desc='RipSize for Supernote.';p.versionName='0.0.1';p.versionCode='1';fs.writeFileSync('PluginConfig.json',JSON.stringify(p,null,2)+'\\n');"
             ./buildPlugin.sh
           fi
 
