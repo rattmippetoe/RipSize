@@ -36,10 +36,11 @@ jobs:
       - name: Install Android build components
         shell: bash
         run: |
-          export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          export ANDROID_HOME="/usr/local/lib/android/sdk"
           export ANDROID_SDK_ROOT="$ANDROID_HOME"
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
 
       - name: Generate current Supernote scaffold
         shell: bash
@@ -168,10 +169,11 @@ jobs:
                     java-version: '21'
                 - name: Install Android SDK components
                   run: |
-                    export ANDROID_HOME="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+                    export ANDROID_HOME="/usr/local/lib/android/sdk"
                     export ANDROID_SDK_ROOT="$ANDROID_HOME"
-                    yes | sdkmanager --licenses >/dev/null || true
-                    sdkmanager 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
+                    SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+                    yes | "$SDKMANAGER" --licenses >/dev/null || true
+                    "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
                 - name: Install dependencies
                   run: npm ci --legacy-peer-deps
                 - name: Build plugin
