@@ -1,4 +1,4 @@
-name: Build RipSize
+name: Build RipSize / RecognizeSize Beta
 
 on:
   push:
@@ -13,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -30,15 +31,35 @@ jobs:
           SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
           "$SDKMANAGER" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0' 'ndk;27.1.12297006'
-      - name: Install dependencies
-        run: npm ci --legacy-peer-deps
-      - name: Build plugin
+      - name: Overlay RecognizeSize beta on React Native host project
+        run: |
+          test -f ci-payload/RecognizeSize_overlay.tar.xz
+          tar -xJf ci-payload/RecognizeSize_overlay.tar.xz -C .
+          node -e "const c=require('./PluginConfig.json');const a=require('./app.json');if(c.pluginKey!==a.name||c.versionName!=='0.1.0-beta') process.exit(1);"
+      - name: Install pinned project dependencies
+        run: |
+          npm ci --legacy-peer-deps
+          npm install --legacy-peer-deps --save-exact react-native-fs@2.20.0 i18next@23.16.8 react-i18next@15.1.4
+      - name: Test RecognizeSize core
+        run: node --test __tests__/*.test.js
+      - name: Build installable plugin
         run: |
           chmod +x ./buildPlugin.sh
           ./buildPlugin.sh
+      - name: Validate installable package
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(build/outputs/*.snplg)
+          test "${#files[@]}" -gt 0
+          for f in "${files[@]}"; do
+            unzip -t "$f"
+            unzip -p "$f" PluginConfig.json | python3 -c 'import json,sys; c=json.load(sys.stdin); assert c["pluginID"]=="rcsz9m4n2p7w8q1a", c; assert c["pluginKey"]=="recognizesize", c; print("Valid plugin:",c["name"],c["versionName"])'
+            unzip -l "$f" | tail -30
+          done
       - name: Upload installable plugin
         uses: actions/upload-artifact@v4
         with:
-          name: RipSize-snplg
+          name: RecognizeSize-v0.1.0-beta-snplg
           path: build/outputs/*.snplg
           if-no-files-found: error
